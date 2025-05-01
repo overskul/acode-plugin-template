@@ -1,0 +1,23 @@
+{
+  "id": "acode.plugin.template",
+  "name": "acode plugin template",
+  "main": "main.js",
+  "version": "0.0.1",
+  "readme": "readme.md",
+  "icon": "icon.png",
+  "license": "MIT",
+  "changelog": "changelog.md",
+  "files": ["./LICENSE"],
+  "price": 0,
+  "Keywords": [
+    "Template"
+  ],
+  "minVersionCode": 958,
+  "author": {
+    "name": "USER_NAME",
+    "email": "EMAIL",
+    "url": "URL",
+    "github": "USER_NAME"
+  },
+  "contributors": []
+}
