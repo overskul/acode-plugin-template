@@ -1,5 +1,5 @@
 export class AcodePluginTemplate {
-  async init(baseUrl, $page, { cacheFileUrl, cacheFile }) {
+  async init(baseUrl, $page, { cacheFileUrl, cacheFile, firstInit }) {
     // plugin initialisation
   }
 
