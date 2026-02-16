@@ -4,15 +4,19 @@
   "main": "main.js",
   "version": "0.0.1",
   "readme": "readme.md",
-  "icon": "icon.png",
+  "icon": "assets/plugin-icon.png",
   "license": "MIT",
   "changelog": "changelog.md",
-  "files": ["./LICENSE"],
+  "files": [
+    "./LICENSE",
+    "./assets"
+  ],
   "price": 0,
   "Keywords": [
-    "Template"
+    "Template",
+    "Plugin"
   ],
-  "minVersionCode": 958,
+  "minVersionCode": 965,
   "repository": "REPO_URL",
   "author": {
     "name": "USER_NAME",
