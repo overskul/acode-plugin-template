@@ -1,13 +1,26 @@
 import fs from 'node:fs/promises';
-import { createWriteStream, createReadStream } from "node:fs";
+import { createWriteStream } from "node:fs";
 import path from 'node:path';
 import archiver from 'archiver';
-import { pipeline } from 'node:stream/promises';
 
 const ROOT = process.cwd();
 const licenseCache = new Map();
 const MAX_PRICE = 10000;
 const MIN_PRICE = 0;
+
+const validLicenses = [
+  'MIT',
+  'GPL-3.0',
+  'Apache-2.0',
+  'BSD-2-Clause',
+  'BSD-3-Clause',
+  'LGPL-3.0',
+  'MPL-2.0',
+  'CDDL-1.0',
+  'EPL-2.0',
+  'AGPL-3.0',
+  'Proprietary',
+];
 
 export default function BuildPlugin(plugin) {
   return {
@@ -15,69 +28,74 @@ export default function BuildPlugin(plugin) {
     setup(build) {
       build.onEnd(async result => {
         if (result.errors.length > 0) return;
-        await startBuild(plugin);
+        await startBuild({ ...plugin });
       });
     }
   }
 }
 
-async function startBuild(plugin) {
-  const OUTDIR_PATH = path.dirname(plugin.output);
-  const OUTFILE_PATH = path.basename(plugin.output);
+async function startBuild(p) {
+  const OUTDIR_PATH = path.dirname(p.output);
+  const OUTFILE_PATH = path.basename(p.output);
 
-  plugin.main = OUTFILE_PATH;
-  delete plugin.entry;
-  delete plugin.output;
+  p.main = OUTFILE_PATH;
+  delete p.entry;
+  delete p.output;
 
-  // Parallel file operations
   const [icon, readme, changelog, license] = await Promise.all([
-    plugin.icon ? copyFile(plugin.icon, OUTDIR_PATH) : null,
-    plugin.readme ? copyFile(plugin.readme, OUTDIR_PATH) : null,
-    plugin.changelog ? copyFile(plugin.changelog, OUTDIR_PATH) : null,
-    plugin.license ? handleLicense(plugin.license, OUTDIR_PATH, plugin.author.name) : null
+    p.icon ? copyFile(p.icon, OUTDIR_PATH) : null,
+    p.readme ? copyFile(p.readme, OUTDIR_PATH) : null,
+    p.changelog ? copyFile(p.changelog, OUTDIR_PATH) : null,
+    p.license ? handleLicense(p.license, OUTDIR_PATH, p.author.name) : null
   ]);
 
-  if (icon) plugin.icon = icon;
-  if (readme) plugin.readme = readme;
-  if (changelog) plugin.changelog = changelog;
-  if (license) plugin.license = license;
+  if (icon) p.icon = icon;
+  if (readme) p.readme = readme;
+  if (changelog) p.changelog = changelog;
+  if (license) {
+    p.license = license;
+    if (!validLicenses.includes(license)) {
+      console.error(`Invalid license "${license}". Must be one of: ${validLicenses.join(', ')}`);
+    }
+  }
 
   // copy assets
-  if (plugin.files) plugin.files = await copyDir(plugin.files, OUTDIR_PATH);
+  if (p.files) p.files = await copyDir(p.files, OUTDIR_PATH);
 
   // price validation
-  plugin.price = Math.max(MIN_PRICE, Math.min(MAX_PRICE, plugin.price));
+  p.price = Math.max(MIN_PRICE, Math.min(MAX_PRICE, p.price));
 
   // repository
-  if (plugin.repository && plugin.price !== MIN_PRICE) {
-    console.error(`Repository is only require when plugin is free, deleting it...`);
-    delete plugin.repository;
-  } else if (!plugin.repository && plugin.price === MIN_PRICE) {
-    console.error(`Repository is required because the plugin is free (open source)`);
+  if (p.repository && p.price !== MIN_PRICE) {
+    console.warn(`Repository is only required when plugin is free, deleting it...`);
+    delete p.repository;
+  } else if (!p.repository && p.price === MIN_PRICE) {
+    console.error(`Repository is required when the plugin is free (open source)`);
   }
 
   // author
-  if (!plugin.author.name) console.error("Author name is required");
+  if (!p.author.name) console.error("Author name is required");
 
   // zip name
-  const zipName = (plugin.zip ?? "plugin.zip")
-    .replace("{id}", plugin.id)
-    .replace("{name}", plugin.name)
-    .replace("{version}", plugin.version)
-    .replace("{price}", plugin.price)
-    .replace("{author}", plugin.author.name)
-    .replace("{license}", plugin.license)
-    .replace("{github}", plugin.author.github);
-  delete plugin.zip;
+  const tokens = {
+    id: p.id,
+    name: p.name,
+    version: p.version,
+    price: p.price,
+    author: p.author.name,
+    license: p.license,
+    github: p.author.github
+  };
+  const zipName = (p.zip ?? "plugin.zip").replace(/\{(\w+)\}/g, (_, key) => tokens[key] ?? `{${key}}`);
+  delete p.zip;
 
-  const pluginJson = JSON.stringify(plugin);
-  const pluginInjection = `(()=>{const PLUGIN = ${pluginJson};`;
+  const pluginJson = JSON.stringify(p);
   const outfilePath = path.join(ROOT, OUTDIR_PATH, OUTFILE_PATH);
 
   await Promise.all([
     fs.writeFile(path.join(ROOT, OUTDIR_PATH, "plugin.json"), pluginJson),
-    fs.readFile(outfilePath, "utf8").then(buildFile => 
-      fs.writeFile(outfilePath, buildFile.replace("(()=>{", pluginInjection))
+    fs.readFile(outfilePath, "utf8").then(buildFile =>
+      fs.writeFile(outfilePath, `const __PLUGIN__ = ${pluginJson};\n` + buildFile)
     )
   ]);
 
@@ -88,19 +106,18 @@ async function startBuild(plugin) {
 async function handleLicense(licensePath, outDir, authorName) {
   const licenseKey = licensePath.toLowerCase();
   try {
-    const copiedPath = await copyFile(licensePath, outDir);
-    const licenseContent = await fs.readFile(path.join(ROOT, copiedPath), "utf8");
+    const licenseContent = await fs.readFile(path.resolve(licensePath), "utf8");
+    await copyFile(licensePath, outDir);
     return extractLicenseType(licenseContent);
-  } catch (e) {
-    let licenseContent = await getLicense(licenseKey);
+  } catch {
+    const licenseContent = await fetchLicense(licenseKey);
     if (licenseContent) {
       const licenseType = extractLicenseType(licenseContent);
-      licenseContent = licenseContent
+      const filled = licenseContent
         .replace("[fullname]", authorName)
         .replace("[year]", new Date().getFullYear());
-      await fs.writeFile(path.join(ROOT, outDir, "LICENSE"), licenseContent);
+      await fs.writeFile(path.join(ROOT, outDir, "LICENSE"), filled);
       return licenseType;
-    }
   }
   return null;
 }
@@ -112,13 +129,13 @@ function extractLicenseType(content) {
   return parts.join(" ").toUpperCase();
 }
 
-async function getLicense(license) {
+async function fetchLicense(license) {
   if (licenseCache.has(license)) return licenseCache.get(license);
   try {
     const res = await fetch(`https://raw.githubusercontent.com/github/choosealicense.com/gh-pages/_licenses/${license}.txt`);
     if (!res.ok) return null;
     const text = await res.text();
-    const content = text.slice(text.lastIndexOf("---")).trim();
+    const content = text.slice(text.lastIndexOf("---") + 1).trim();
     licenseCache.set(license, content);
     return content;
   } catch (err) {
@@ -130,7 +147,7 @@ async function getLicense(license) {
 async function createZipArchive(sourceDir, zipFileName) {
   return new Promise((resolve, reject) => {
     const output = createWriteStream(zipFileName);
-    const archive = archiver('zip', { 
+    const archive = archiver('zip', {
       zlib: { level: 6 },
       statConcurrency: 10
     });
@@ -148,28 +165,21 @@ async function createZipArchive(sourceDir, zipFileName) {
 // utils
 async function copyFile(src, dist) {
   const absoluteSrc = path.resolve(src);
-  await fs.access(absoluteSrc);
   const relativePath = path.relative(ROOT, absoluteSrc);
   const targetPath = path.join(dist, relativePath);
   await fs.mkdir(path.dirname(targetPath), { recursive: true });
-  await pipeline(
-    createReadStream(absoluteSrc),
-    createWriteStream(targetPath)
-  );
+  await fs.copyFile(absoluteSrc, targetPath);
   return relativePath;
 }
 
-async function copyDir(dir, dist) {
-  const tasks = dir.map(async (src) => {
+async function copyDir(dirs, dist) {
+  const tasks = dirs.map(async (src) => {
     const absoluteSrc = path.resolve(src);
-    const stat = await fs.stat(absoluteSrc);
-    if (stat.isFile()) {
-      return await copyFile(absoluteSrc, dist);
-    } else {
-      const entries = await fs.readdir(absoluteSrc);
-      const childs = entries.map(name => path.join(absoluteSrc, name));
-      return await copyDir(childs, dist);
-    }
+    const entries = await fs.readdir(absoluteSrc, { withFileTypes: true });
+    return Promise.all(entries.map(entry => {
+      const entryPath = path.join(absoluteSrc, entry.name);
+      return entry.isFile() ? copyFile(entryPath, dist) : copyDir([entryPath], dist);
+    }));
   });
-  return (await Promise.all(tasks)).flat();
+  return (await Promise.all(tasks)).flat(Infinity);
 }

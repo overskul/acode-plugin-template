@@ -53,12 +53,15 @@ const buildConfig = {
   }
 })();
 
-async function getJsonFile(path) {
+async function getJsonFile(filePath) {
   try {
-    const json = await fs.readFile(path, "utf8");
-    return JSON.parse(json);
+    const raw = await fs.readFile(filePath, "utf8");
+    const stripped = raw
+      .replace(/\/\/.*$/gm, '')          // single-line comments
+      .replace(/\/\*[\s\S]*?\*\//g, ''); // multi-line comments
+    return JSON.parse(stripped);
   } catch (_) {
-    console.error("Couldn't read json file path: ", path);
+    console.error("Couldn't read json file path: ", filePath);
     return {};
   }
 }

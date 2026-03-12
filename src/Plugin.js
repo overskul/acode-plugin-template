@@ -1,4 +1,4 @@
-export class AcodePluginTemplate {
+export default class AcodePluginTemplate {
   constructor(plugin) {
     // plugin constructor
   }
