@@ -14,9 +14,8 @@ const _package = await getJsonFile(path.join(process.cwd(), "package.json"));
 const plugin = await getJsonFile(path.join(process.cwd(), _package["acode-plugin"]));
 
 try {
-  if (await fs.access(path.dirname(plugin.output))) {
-    await fs.rm(path.dirname(plugin.output), { recursive: true, force: true });
-  }
+  await fs.access(path.dirname(plugin.output));
+  await fs.rm(path.dirname(plugin.output), { recursive: true, force: true });
 } catch (_) {/* ignore */}
 
 // esbuild config
@@ -57,8 +56,9 @@ async function getJsonFile(filePath) {
   try {
     const raw = await fs.readFile(filePath, "utf8");
     const stripped = raw
-      .replace(/\/\/.*$/gm, '')          // single-line comments
-      .replace(/\/\*[\s\S]*?\*\//g, ''); // multi-line comments
+      .replace(/"(?:[^"\\]|\\.)*"|\/\/.*$|\/\*[\s\S]*?\*\//gm, match =>
+        match.startsWith('"') ? match : ''
+      );
     return JSON.parse(stripped);
   } catch (_) {
     console.error("Couldn't read json file path: ", filePath);

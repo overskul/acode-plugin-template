@@ -95,7 +95,7 @@ async function startBuild(p) {
   await Promise.all([
     fs.writeFile(path.join(ROOT, OUTDIR_PATH, "plugin.json"), pluginJson),
     fs.readFile(outfilePath, "utf8").then(buildFile =>
-      fs.writeFile(outfilePath, `const __PLUGIN__ = ${pluginJson};\n` + buildFile)
+      fs.writeFile(outfilePath, buildFile.replace("(()=>{", `(()=>{const __PLUGIN__ = ${pluginJson};`))
     )
   ]);
 
@@ -118,6 +118,7 @@ async function handleLicense(licensePath, outDir, authorName) {
         .replace("[year]", new Date().getFullYear());
       await fs.writeFile(path.join(ROOT, outDir, "LICENSE"), filled);
       return licenseType;
+    }
   }
   return null;
 }
