@@ -1,9 +1,10 @@
 {
-  // comments
+  // comments supported (removed on compile time)
   "id": "acode.plugin.template",
   "name": "acode plugin template",
   "version": "0.0.1",
 
+  // temporary propertys
   "entry": "src/main.js",
   "output": "dist/Template.js",
   "zip": "{id}-{version}.acodeplugin",
@@ -14,9 +15,9 @@
   "changelog": "changelog.md",
 
   "files": [
-    "./assets"
+    // "./assets"
   ],
-  "Keywords": [
+  "keywords": [
     "Template",
     "Plugin"
   ],
@@ -32,5 +33,11 @@
     "github": "USER_NAME"
   },
 
-  "contributors": []
+  "contributors": [
+    // {
+    //  "name": "CONTRIBUTOR_NAME",
+    //  "role": "CONTRIBUTOR_ROLE",
+    //  "github": "CONTRIBUTOR_GITHUB"
+    // }
+  ]
 }
