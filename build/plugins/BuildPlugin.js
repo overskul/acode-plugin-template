@@ -1,66 +1,62 @@
-import fs from 'node:fs/promises';
+import fs from "node:fs/promises";
+import path from "node:path";
 import { createWriteStream } from "node:fs";
-import path from 'node:path';
-import archiver from 'archiver';
+import { ZipArchive } from "archiver";
 
 const ROOT = process.cwd();
-const licenseCache = new Map();
+
 const MAX_PRICE = 10000;
 const MIN_PRICE = 0;
-
-const validLicenses = [
-  'MIT',
-  'GPL-3.0',
-  'Apache-2.0',
-  'BSD-2-Clause',
-  'BSD-3-Clause',
-  'LGPL-3.0',
-  'MPL-2.0',
-  'CDDL-1.0',
-  'EPL-2.0',
-  'AGPL-3.0',
-  'Proprietary',
+const VALID_LICENSES = [
+  "MIT",
+  "GPL-3.0",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "LGPL-3.0",
+  "MPL-2.0",
+  "CDDL-1.0",
+  "EPL-2.0",
+  "AGPL-3.0",
+  "Proprietary",
 ];
 
-export default function BuildPlugin(plugin) {
+export default function BuildPlugin({ plugin, config }) {
   return {
-    name: 'build-plugin',
+    name: "build-plugin",
     setup(build) {
       build.onEnd(async result => {
         if (result.errors.length > 0) return;
-        await startBuild({ ...plugin });
+        await startBuild({ plugin, config });
       });
     }
   }
 }
 
-async function startBuild(p) {
-  const OUTDIR_PATH = path.dirname(p.output);
-  const OUTFILE_PATH = path.basename(p.output);
+async function startBuild({ plugin: p, config: c }) {
+  const OUTDIR_PATH = path.dirname(c.OUTPUT);
+  const OUTFILE_PATH = path.basename(c.OUTPUT);
 
   p.main = OUTFILE_PATH;
-  delete p.entry;
-  delete p.output;
 
-  const [icon, readme, changelog, license] = await Promise.all([
+  const [icon, readme, changelog] = await Promise.all([
     p.icon ? copyFile(p.icon, OUTDIR_PATH) : null,
     p.readme ? copyFile(p.readme, OUTDIR_PATH) : null,
-    p.changelog ? copyFile(p.changelog, OUTDIR_PATH) : null,
-    p.license ? handleLicense(p.license, OUTDIR_PATH, p.author.name) : null
+    p.changelog ? copyFile(p.changelog, OUTDIR_PATH) : null
   ]);
 
   if (icon) p.icon = icon;
   if (readme) p.readme = readme;
   if (changelog) p.changelog = changelog;
-  if (license) {
-    p.license = license;
-    if (!validLicenses.includes(license)) {
-      console.error(`Invalid license "${license}". Must be one of: ${validLicenses.join(', ')}`);
-    }
-  }
+
+  // check license
+  if (
+       typeof p.license === "string" &&
+       VALID_LICENSES.indexOf(p.license) === -1
+     ) console.error("Invalid license. please use one of: " + VALID_LICENSES.join("\n- "))
 
   // copy assets
-  if (p.files) p.files = await copyDir(p.files, OUTDIR_PATH);
+  if (p.files) p.files = await copy(p.files, OUTDIR_PATH);
 
   // price validation
   p.price = Math.max(MIN_PRICE, Math.min(MAX_PRICE, p.price));
@@ -76,87 +72,37 @@ async function startBuild(p) {
   // author
   if (!p.author.name) console.error("Author name is required");
 
-  // zip name
-  const tokens = {
-    id: p.id,
-    name: p.name,
-    version: p.version,
-    price: p.price,
-    author: p.author.name,
-    license: p.license,
-    github: p.author.github
-  };
-  const zipName = (p.zip ?? "plugin.zip").replace(/\{(\w+)\}/g, (_, key) => tokens[key] ?? `{${key}}`);
-  delete p.zip;
-
+  // manifest
   const pluginJson = JSON.stringify(p);
   const outfilePath = path.join(ROOT, OUTDIR_PATH, OUTFILE_PATH);
 
-  await Promise.all([
-    fs.writeFile(path.join(ROOT, OUTDIR_PATH, "plugin.json"), pluginJson),
-    fs.readFile(outfilePath, "utf8").then(buildFile =>
-      fs.writeFile(outfilePath, buildFile.replace("(()=>{", `(()=>{const __PLUGIN__ = ${pluginJson};`))
-    )
-  ]);
+  await fs.writeFile(path.join(ROOT, OUTDIR_PATH, "plugin.json"), pluginJson);
 
   // zip
+  const zipName = (c.ZIP ?? "plugin.zip")
+    .replace(/\{([^}]+)\}/g, (_, key) => {
+      return key.indexOf(".") !== -1 ?
+        key.split(".").reduce((cur, per) => cur[per], p) :
+        p[key] ?? key;
+    });
+
   await createZipArchive(OUTDIR_PATH, zipName);
-}
-
-async function handleLicense(licensePath, outDir, authorName) {
-  const licenseKey = licensePath.toLowerCase();
-  try {
-    const licenseContent = await fs.readFile(path.resolve(licensePath), "utf8");
-    await copyFile(licensePath, outDir);
-    return extractLicenseType(licenseContent);
-  } catch {
-    const licenseContent = await fetchLicense(licenseKey);
-    if (licenseContent) {
-      const licenseType = extractLicenseType(licenseContent);
-      const filled = licenseContent
-        .replace("[fullname]", authorName)
-        .replace("[year]", new Date().getFullYear());
-      await fs.writeFile(path.join(ROOT, outDir, "LICENSE"), filled);
-      return licenseType;
-    }
-  }
-  return null;
-}
-
-function extractLicenseType(content) {
-  const firstLine = content.split("\n", 1)[0];
-  const parts = firstLine.split(" ");
-  parts.pop();
-  return parts.join(" ").toUpperCase();
-}
-
-async function fetchLicense(license) {
-  if (licenseCache.has(license)) return licenseCache.get(license);
-  try {
-    const res = await fetch(`https://raw.githubusercontent.com/github/choosealicense.com/gh-pages/_licenses/${license}.txt`);
-    if (!res.ok) return null;
-    const text = await res.text();
-    const content = text.slice(text.lastIndexOf("---") + 1).trim();
-    licenseCache.set(license, content);
-    return content;
-  } catch (err) {
-    console.error('Error fetching license:', err.message);
-    return null;
-  }
 }
 
 async function createZipArchive(sourceDir, zipFileName) {
   return new Promise((resolve, reject) => {
     const output = createWriteStream(zipFileName);
-    const archive = archiver('zip', {
+    const archive = new ZipArchive({
       zlib: { level: 6 },
       statConcurrency: 10
     });
-    output.on('close', () => {
+
+    output.on("finish", () => {
       console.log(`📦 Created ${zipFileName} (${archive.pointer()} bytes)`);
       resolve();
     });
-    archive.on('error', reject);
+    archive.on("error", reject);
+
     archive.pipe(output);
     archive.directory(sourceDir, false);
     archive.finalize();
@@ -164,6 +110,16 @@ async function createZipArchive(sourceDir, zipFileName) {
 }
 
 // utils
+async function copy(entries, dist) {
+  const tasks = entries.map(async (src) => {
+    if (src.endsWith("/"))
+      return await copyDir(src, dist);
+    else
+      return await copyFile(src, dist);
+  });
+  return (await Promise.all(tasks)).flat(Infinity);
+}
+
 async function copyFile(src, dist) {
   const absoluteSrc = path.resolve(src);
   const relativePath = path.relative(ROOT, absoluteSrc);
@@ -173,14 +129,12 @@ async function copyFile(src, dist) {
   return relativePath;
 }
 
-async function copyDir(dirs, dist) {
-  const tasks = dirs.map(async (src) => {
+async function copyDir(src, dist) {
+
     const absoluteSrc = path.resolve(src);
     const entries = await fs.readdir(absoluteSrc, { withFileTypes: true });
     return Promise.all(entries.map(entry => {
       const entryPath = path.join(absoluteSrc, entry.name);
       return entry.isFile() ? copyFile(entryPath, dist) : copyDir([entryPath], dist);
     }));
-  });
-  return (await Promise.all(tasks)).flat(Infinity);
 }

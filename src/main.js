@@ -1,7 +1,7 @@
-import AcodePluginTemplate from './Plugin.js';
+import Plugin from "@/Plugin";
 
 if (window.acode) {
-  const mPlugin = new AcodePluginTemplate();
-  acode.setPluginInit(__PLUGIN__.id, mPlugin.init.bind(mPlugin), mPlugin?.pSettings);
-  acode.setPluginUnmount(__PLUGIN__.id, mPlugin.destroy.bind(mPlugin));
+  const plugin = new Plugin();
+  acode.setPluginInit(__PLUGIN__.id, plugin.onInit.bind(plugin), plugin?.PSettings);
+  acode.setPluginUnmount(__PLUGIN__.id, plugin.onDestroy.bind(plugin));
 }

@@ -1,17 +1,17 @@
 export default class AcodePluginTemplate {
-  constructor(plugin) {
+  constructor() {
     // plugin constructor
   }
 
-  async init(baseUrl, $page, { cacheFileUrl, cacheFile, firstInit }) {
+  async onInit(baseUrl, $page, { ctx, firstInit, cacheFileUrl, cacheFile }) {
     // plugin initialisation
   }
 
-  async destroy() {
+  async onDestroy() {
     // plugin clean up
   }
 
-  get pSettings() {
+  get PSettings() {
     return {
       list: [],
       cb: (key, value) => {}

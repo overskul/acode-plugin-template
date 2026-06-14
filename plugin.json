@@ -9,7 +9,7 @@
   "changelog": "changelog.md",
 
   "files": [
-    "./assets",
+    "./assets/",
     "./LICENSE"
   ],
   "keywords": [
