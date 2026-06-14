@@ -10,8 +10,8 @@ const PORT = _portArg ? parseInt(_portArg.split('=')[1]) : 3000;
 const IS_SERVE = process.argv.includes('--serve');
 
 // plugin manifest
-const _package = await getJsonFile(path.join(process.cwd(), "package.json"));
-const plugin = await getJsonFile(path.join(process.cwd(), _package["acode-plugin"]));
+const _package = await readJsonFile(path.join(process.cwd(), "package.json"));
+const plugin = await readJsonFile(path.join(process.cwd(), _package["acode-plugin"]));
 
 try {
   await fs.access(path.dirname(plugin.output));
@@ -52,14 +52,10 @@ const buildConfig = {
   }
 })();
 
-async function getJsonFile(filePath) {
+async function readJsonFile(filePath) {
   try {
     const raw = await fs.readFile(filePath, "utf8");
-    const stripped = raw
-      .replace(/"(?:[^"\\]|\\.)*"|\/\/.*$|\/\*[\s\S]*?\*\//gm, match =>
-        match.startsWith('"') ? match : ''
-      );
-    return JSON.parse(stripped);
+    return JSON.parse(raw);
   } catch (_) {
     console.error("Couldn't read json file path: ", filePath);
     return {};
