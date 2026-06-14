@@ -1,21 +1,16 @@
 {
-  // comments supported (removed on compile time)
   "id": "acode.plugin.template",
-  "name": "acode plugin template",
+  "name": "Acode Plugin Template",
   "version": "0.0.1",
 
-  // temporary propertys
-  "entry": "src/main.js",
-  "output": "dist/Template.js",
-  "zip": "{id}-{version}.acodeplugin",
-
-  "readme": "readme.md",
-  "icon": "assets/plugin-icon.png",
   "license": "MIT",
+  "icon": "assets/plugin-icon.png",
+  "readme": "readme.md",
   "changelog": "changelog.md",
 
   "files": [
-    // "./assets"
+    "./assets",
+    "./LICENSE"
   ],
   "keywords": [
     "Template",
@@ -34,10 +29,10 @@
   },
 
   "contributors": [
-    // {
-    //  "name": "CONTRIBUTOR_NAME",
-    //  "role": "CONTRIBUTOR_ROLE",
-    //  "github": "CONTRIBUTOR_GITHUB"
-    // }
+    {
+      "name": "CONTRIBUTOR_NAME",
+      "role": "CONTRIBUTOR_ROLE",
+      "github": "CONTRIBUTOR_GITHUB"
+    }
   ]
 }
