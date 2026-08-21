@@ -11,7 +11,11 @@ export default class AcodePluginTemplate {
     // plugin clean up
   }
 
-  get PSettings() {
+  async onDisable() {
+    // plugin disabled
+  }
+
+  get pageSettings() {
     return {
       list: [],
       cb: (key, value) => {}
