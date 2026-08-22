@@ -21,23 +21,23 @@ const VALID_LICENSES = [
   "Proprietary",
 ];
 
-export default function BuildPlugin({ plugin, config }) {
+export default function BuildPlugin(config) {
   return {
     name: "build-plugin",
     setup(build) {
       build.onEnd(async result => {
         if (result.errors.length > 0) return;
-        await startBuild({ plugin, config });
+        await startBuild(config);
       });
     }
   }
 }
 
-async function startBuild({ plugin: p, config: c }) {
-  const OUTDIR_PATH = path.dirname(c.OUTPUT);
-  const OUTFILE_PATH = path.basename(c.OUTPUT);
+async function startBuild(config) {
+  const { plugin: p, build: b } = config;
 
-  p.main = OUTFILE_PATH;
+  const OUTDIR_PATH = path.dirname(b.outputFile);
+  p.main = path.basename(b.outputFile);
 
   const [icon, readme, changelog] = await Promise.all([
     p.icon ? copyFile(p.icon, OUTDIR_PATH) : null,
@@ -53,7 +53,7 @@ async function startBuild({ plugin: p, config: c }) {
   if (
        typeof p.license === "string" &&
        VALID_LICENSES.indexOf(p.license) === -1
-     ) console.error("Invalid license. please use one of: " + VALID_LICENSES.join("\n- "))
+     ) console.error("Invalid license. must be one of: \n-" + VALID_LICENSES.join("\n- "))
 
   // copy assets
   if (p.files) p.files = await copy(p.files, OUTDIR_PATH);
@@ -63,7 +63,7 @@ async function startBuild({ plugin: p, config: c }) {
 
   // repository
   if (p.repository && p.price !== MIN_PRICE) {
-    console.warn(`Repository is only required when plugin is free, deleting it...`);
+    console.warn(`Repository is only required when plugin is free, deleting it.`);
     delete p.repository;
   } else if (!p.repository && p.price === MIN_PRICE) {
     console.error(`Repository is required when the plugin is free (open source)`);
@@ -74,17 +74,14 @@ async function startBuild({ plugin: p, config: c }) {
 
   // manifest
   const pluginJson = JSON.stringify(p);
-  const outfilePath = path.join(ROOT, OUTDIR_PATH, OUTFILE_PATH);
-
   await fs.writeFile(path.join(ROOT, OUTDIR_PATH, "plugin.json"), pluginJson);
 
   // zip
-  const zipName = (c.ZIP ?? "plugin.zip")
-    .replace(/\{([^}]+)\}/g, (_, key) => {
-      return key.indexOf(".") !== -1 ?
-        key.split(".").reduce((cur, per) => cur[per], p) :
-        p[key] ?? key;
-    });
+  const zipName = (b.bundle ?? "plugin.zip")
+    .replace(/\{([^}]+)\}/g, (_, key) => key.indexOf(".") !== -1
+      ? (key.split(".").reduce((cur, per) => cur[per], p) ?? key)
+      : (p[key] ?? key)
+    );
 
   await createZipArchive(OUTDIR_PATH, zipName);
 }
@@ -112,10 +109,8 @@ async function createZipArchive(sourceDir, zipFileName) {
 // utils
 async function copy(entries, dist) {
   const tasks = entries.map(async (src) => {
-    if (src.endsWith("/"))
-      return await copyDir(src, dist);
-    else
-      return await copyFile(src, dist);
+    if (src.endsWith("/")) return await copyDir(src, dist);
+    else return await copyFile(src, dist);
   });
   return (await Promise.all(tasks)).flat(Infinity);
 }
@@ -130,11 +125,10 @@ async function copyFile(src, dist) {
 }
 
 async function copyDir(src, dist) {
-
-    const absoluteSrc = path.resolve(src);
-    const entries = await fs.readdir(absoluteSrc, { withFileTypes: true });
-    return Promise.all(entries.map(entry => {
-      const entryPath = path.join(absoluteSrc, entry.name);
-      return entry.isFile() ? copyFile(entryPath, dist) : copyDir([entryPath], dist);
-    }));
+  const absoluteSrc = path.resolve(src);
+  const entries = await fs.readdir(absoluteSrc, { withFileTypes: true });
+  return Promise.all(entries.map(entry => {
+    const entryPath = path.join(absoluteSrc, entry.name);
+    return entry.isFile() ? copyFile(entryPath, dist) : copyDir([entryPath], dist);
+  }));
 }

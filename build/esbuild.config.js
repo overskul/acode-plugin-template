@@ -1,38 +1,39 @@
-import * as esbuild from 'esbuild';
+import * as esbuild from "esbuild";
 import fs from "node:fs/promises";
 import path from "node:path";
 
 import JsxPlugin from "./plugins/jsx/JsxPlugin.js";
 import BuildPlugin from "./plugins/BuildPlugin.js";
 
-import config from "./BuildConfig.js";
-
-// constants
-const { PORT } = config;
-const IS_SERVE = process.argv.includes('--serve');
-
-// plugin manifest
+// plugin config
 const pkg = await readJsonFile(path.join(process.cwd(), "package.json"));
-const plugin = await readJsonFile(path.join(process.cwd(), pkg["acode-plugin"]));
 
-try {
-  await fs.access(path.resolve(path.dirname(config.OUTPUT)));
-  await fs.rm(path.resolve(path.dirname(config.OUTPUT)), { recursive: true, force: true });
-} catch (_) {/* ignore */}
+const configPath = pkg["acode-plugin"] || process.argv?.find(a => a?.startsWith("--config="))?.split("=")?.pop();
+const config = await getConfig(path.join(process.cwd(), configPath));
+
+const IS_DEV = process.argv.includes("-D") || process.argv.includes("--dev") || process.argv.includes("--development");
+
+if (config.build.clean) {
+  try {
+    await fs.access(path.resolve(path.dirname(config.build.outputFile)));
+    await fs.rm(path.resolve(path.dirname(config.build.outputFile)), { recursive: true, force: true });
+  } catch (_) {/* ignore */}
+}
 
 // esbuild config
 const buildConfig = {
-  entryPoints: [config.ENTRY],
-  outfile: config.OUTPUT,
+  entryPoints: [config.build.entryFile],
+  outfile: config.build.outputFile,
   bundle: true,
   minify: true,
-  logLevel: 'info',
+  logLevel: "info",
   color: true,
   define: {
     __CONFIG__: JSON.stringify(config),
-    __PLUGIN__: JSON.stringify(plugin),
+    __BUILD__: JSON.stringify(config.build),
+    __PLUGIN__: JSON.stringify(config.plugin),
     __PACKAGE__: JSON.stringify(pkg),
-    ...(config.GLOBAL || {})
+    ...(stringifyObject(config.build?.define ?? {}))
   },
   resolveExtensions: [
     ".js",
@@ -41,37 +42,39 @@ const buildConfig = {
     ".tsx",
     ".scss",
     ".css",
-    ".json"
+    ".json",
+    ...(config.build.ignoreExtension ?? [])
   ],
   alias: {
     "@": "./src",
+    ...(config.build.alias ?? {})
   },
   loader: {
     ".js": "jsx",
     ".ts": "tsx"
   },
   plugins: [
-    (config.JSX ? JsxPlugin(config.entry) : ({ name: "N/A", setup(){} })),
-    BuildPlugin({ plugin, config })
+    (hasPlugin("JSX") ? JsxPlugin(config.build.entryFile) : dumpPlugin()),
+    BuildPlugin(config)
   ],
 };
 
-// Main function to handle both serve and production builds
+// Main function to handle both dev and production builds
 (async function () {
-  if (IS_SERVE) {
-    console.log('\nStarting development server...\n');
+  if (IS_DEV) {
+    console.log("\nStarting development server...\n");
     // Watch and Serve Mode
     const ctx = await esbuild.context(buildConfig);
     await ctx.watch();
     const { host } = await ctx.serve({
-      servedir: '.',
-      port: PORT
+      servedir: ".",
+      port: config.build.port || 3456
     });
-    console.log(`\nDevelopment server running on http://localhost:${PORT}\n`);
+    console.log(`\nDevelopment server running on http://localhost:${config.build.port || 3456}\n`);
   } else {
-    console.log('\nBuilding for production...\n');
+    console.log("\nBuilding...\n");
     await esbuild.build(buildConfig);
-    console.log('\nProduction build complete.');
+    console.log("\nBuild completed.");
   }
 })();
 
@@ -79,8 +82,36 @@ async function readJsonFile(filePath) {
   try {
     const raw = await fs.readFile(filePath, "utf8");
     return JSON.parse(raw);
-  } catch (_) {
+  } catch (e) {
     console.error("Couldn't read json file path: ", filePath);
+    throw e;
+  }
+}
+
+async function getConfig(filePath) {
+  try {
+    const { config } = await import(filePath);
+    return config;
+  } catch (e) {
+    console.error("Couldn't read config file path: ", filePath);
+    throw e;
+  }
+}
+
+function stringifyObject(obj = {}) {
+  try {
+    return Object.keys(obj)
+      .reduce((o, k) => (o[k] = JSON.stringify(obj[k]), o), {});
+  } catch (_) {
     return {};
   }
+}
+
+function hasPlugin(pluginName) {
+  return (config.build.plugins ?? []).includes(pluginName);
+}
+
+function dumpPlugin() {
+  const num = Math.floor(100 + Math.random() * 900);
+  return { name: `dump_${num}`, setup(){} };
 }
